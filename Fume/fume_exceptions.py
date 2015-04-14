@@ -1,0 +1,2 @@
+class FumeIsBroken:
+  pass

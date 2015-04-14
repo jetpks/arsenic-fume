@@ -1,0 +1,5 @@
+[zabbix]
+api = https://some.zabbix/api
+user = username
+password = password
+hostgroups = 42
