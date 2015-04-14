@@ -20,12 +20,11 @@ logger = logging.getLogger(__name__)
 
 # Class Defs
 class Collect:
-    def __init__(self, lock, problems, api, user, password):
+    def __init__(self, dispatcher, api, user, password):
         self.target = api
         self.user = user
         self.password = password
-        self.lock = lock
-        self.problems = problems
+        self.dispatcher = dispatcher
         if not self.connect():
             raise FumeIsBroken("Problem with connection or credentials: %s"
                                     % self.target)
@@ -41,13 +40,10 @@ class Collect:
         return False
 
     def poll_triggers(self, groupids, min_sev=1):
-        trigs = self.z.trigger.get(groupids=groupids, min_severity=min_sev,
+        self.dispatcher.screen(self.z.trigger.get(groupids=groupids, min_severity=min_sev,
                                     only_true=True,
                                     output="extend",
                                     expandData=True,
                                     expandComment=True,
                                     expandDescription=True,
-                                    expandExpression=True)
-        self.lock.acquire()
-        problems = copy.deepcopy(trigs)
-        self.lock.release()
+                                    expandExpression=True))

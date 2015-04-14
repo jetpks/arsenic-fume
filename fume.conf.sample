@@ -3,3 +3,6 @@ api = https://some.zabbix/api
 user = username
 password = password
 hostgroups = 42
+[redis]
+use_socket = True
+socket = /var/run/redis/redis.sock

@@ -8,60 +8,92 @@
 """
 import re
 import time
+import redis
 import logging
 from fume_exceptions import FumeIsBroken
-from flask import Flask
-from flask.ext import restful
-from flask.ext.restful import Resource, Api, reqparse
 
-# Base Config
-logging.basicConfig(level = logging.DEBUG)
-logger = logging.getLogger(__name__)
-api_prefix = '/api/v0.1'
-
-resources = dict()
-# main
 class Dispatch:
-    def __init__(self, lock, problems, bind='127.0.0.1', port=9001, debug=True):
-        self.lock = lock
-        self.problems = problems
-        self.app = Flask(__name__)
-        self.api = restful.api
-        for res in self.resources: # Dict iteration
-            self.api.add_resource(self.resources[res], api_prefix + res)
+    def __init__(self, redis_srv='127.0.0.1', redis_port=6379,
+            redis_db=0, redis_use_socket=False, redis_socket='/tmp/redis.sock',
+            redis_ch_alerts='alerts', redis_ch_acks='acks', debug=False):
+        # Lumberjack
+        if debug:
+            logging.basicConfig(level = logging.DEBUG)
+        else:
+            logging.basicConfig(level = logging.ERROR)
 
-        self.app.run(debug=True)
+        # Redis connect
+        if redis_use_socket:
+            self.r = redis.StrictRedis(unix_socket_path=redis_socket, db=redis_db)
+        else:
+            self.r = redis.StrictRedis(host=redis_srv, port=redis_port, db=redis_db)
+        self.r.flushall() # Remove any stale data
+        self.ch_alerts = redis_ch_alerts
+        self.ch_acks = redis_ch_acks
 
-# Flask Routing
+    """For shipping alerts to moxxy"""
+    def publish(self, host, triggerid):
+        self.r.publish(self.ch_alerts, host + 'A' + triggerid)
 
-""" Flask Resources
-"""
-class Slash(Resource):
-    def get(self):
-        return {'battlecruiser': 'operational'}
-resources['/'] = Slash # Add us to the default load list with endpoint
-
-class Ack(Resource):
-    def get(self):
+    """For ACKs and junk"""
+    def subscribe(self, handler):
         pass
 
-class Problem(Resource):
-    def get(self):
-        pass # TODO define
-resources['/problems'] = Problem
+    """ return boolean based on whether or not we've seen $alert
+    before"""
+    def seen(self, alert):
+        key = alert['host'] + 'A' + alert['triggerid']
+        # Have we stored this trigger?
+        if not self.r.exists(key):
+            logging.debug('never seen this alert for this host before')
+            return False
+        # Has this trigger been updated since we stored it?
+        if int(alert['lastchange']) != int(self.r.hget(key, 'lastchange')):
+            logging.debug('the alert we have is stale. %s != %s' % (alert['lastchange'], self.r.hget(key, 'lastchange')))
+            return False
+        return True
 
+    def store(self, alert):
+        """ This is an example of an alert:
+                {
+            "status": "0",
+            "hostname": "dc-6642c37-000",
+            "description": "image.uploaded.success",
+            "state": "0",
+            "url": "",
+            "type": "1",
+            "templateid": "0",
+            "value_flags": "0",
+            "lastchange": "1428605426",
+            "value": "1",
+            "priority": "1",
+            "triggerid": "184099",
+            "hostid": "12757",
+            "flags": "0",
+            "comments": "\"description\": \"cb44829f-a803-472e-9...\", \"event_type\": \"image.uploaded\", \"status\": \"success\"\n",
+            "groups": [
+                {
+                    "groupid": "19"
+                }
+            ],
+            "error": "",
+            "host": "dc-6642c37-000",
+            "expression": "{dc-6642c37-000:image.uploaded.success.regexp(\\w+)}=1",
+            "groupid": "19"
+        }"""
+        # Get rid of the pesky groups array
+        alert.pop('groups')
+        # We're using a composite key for a lot of reasons. If you have a
+        # better idea, implement it and submit a pull request.
+        # Reasons:
+        # 0. redis doesn't support complex data structures
+        # 0. we want r.hexists calls to be fast.
+        # 0. pickle, while neat, is kind of gross.
+        # 0. So much json (de/en)coding
+        self.r.hmset(alert['host'] + 'A' + alert['triggerid'], alert)
 
-""" Flask Req Parsers
-"""
-problem_parser = reqparse.RequestParser()
-problem_parser.add_argument('hostgroup', type=str, action='append')
-problem_parser.add_argument('box', type=str, action='append')
-problem_parser.add_argument('active', type=int)
-problem_parser.add_argument('since', type=int)
-problem_parser.add_argument('before', type=int)
-problem_parser.add_argument('limit', type=int)
-problem_parser.add_argument('last',  type=int)
-problem_parser.add_argument('region', type=int)
-problem_parser.add_argument('min_severity', type=int)
-problem_parser.add_argument('max_severity', type=int)
-problem_parser.add_argument('acked', type=int)
+    def screen(self, trigs):
+        for trig in trigs:
+            if not self.seen(trig):
+                self.store(trig)
+                self.publish(trig['host'], trig['triggerid'])
