@@ -18,9 +18,6 @@ dispatcher = dispatch.Dispatch(
         redis_socket=conf.get('redis', 'socket'))
 
 collector = collect.Collect(dispatcher, conf.get('zabbix', 'api'),
-        conf.get('zabbix', 'user'), conf.get('zabbix', 'password'))
-
-while True:
-    collector.poll_triggers([conf.get('zabbix', 'hostgroups')])
-    time.sleep(4)
+        conf.get('zabbix', 'user'), conf.get('zabbix', 'password'),
+        hostgroups=[conf.get('zabbix', 'hostgroups')], interval=3)
 

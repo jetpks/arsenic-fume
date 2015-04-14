@@ -19,7 +19,7 @@ from zabbix.api import ZabbixAPI
 
 # Class Defs
 class Collect:
-    def __init__(self, dispatcher, api, user, password, debug=False):
+    def __init__(self, dispatcher, api, user, password, hostgroups=[], interval=4, debug=False):
         self.target = api
         self.user = user
         self.password = password
@@ -31,6 +31,10 @@ class Collect:
         if not self.connect():
             raise FumeIsBroken("Problem with connection or credentials: %s"
                                     % self.target)
+        # Loop forever
+        while True:
+            self.poll_triggers(hostgroups)
+            time.sleep(interval)
 
     def connect(self):
         self.z = ZabbixAPI(url=self.target, user=self.user,
