@@ -14,17 +14,20 @@ from fume_exceptions import FumeIsBroken
 from zabbix.api import ZabbixAPI
 
 # Base Config
-logging.basicConfig(level = logging.DEBUG)
 #logging.basicConfig(level = logging.ERROR)
-logger = logging.getLogger(__name__)
+#logger = logging.getLogger(__name__)
 
 # Class Defs
 class Collect:
-    def __init__(self, dispatcher, api, user, password):
+    def __init__(self, dispatcher, api, user, password, debug=False):
         self.target = api
         self.user = user
         self.password = password
         self.dispatcher = dispatcher
+        if debug:
+            logging.basicConfig(level = logging.DEBUG)
+        else:
+            logging.basicConfig(level = logging.ERROR)
         if not self.connect():
             raise FumeIsBroken("Problem with connection or credentials: %s"
                                     % self.target)

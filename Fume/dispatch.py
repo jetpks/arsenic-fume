@@ -15,7 +15,8 @@ from fume_exceptions import FumeIsBroken
 class Dispatch:
     def __init__(self, redis_srv='127.0.0.1', redis_port=6379,
             redis_db=0, redis_use_socket=False, redis_socket='/tmp/redis.sock',
-            redis_ch_alerts='alerts', redis_ch_acks='acks', debug=False):
+            redis_ch_alerts='alerts', redis_ch_acks='acks', alert_sep='/',
+            debug=False):
         # Lumberjack
         if debug:
             logging.basicConfig(level = logging.DEBUG)
@@ -30,10 +31,11 @@ class Dispatch:
         self.r.flushall() # Remove any stale data
         self.ch_alerts = redis_ch_alerts
         self.ch_acks = redis_ch_acks
+        self.alert_sep = alert_sep
 
     """For shipping alerts to moxxy"""
     def publish(self, host, triggerid):
-        self.r.publish(self.ch_alerts, host + 'A' + triggerid)
+        self.r.publish(self.ch_alerts, host + self.alert_sep + triggerid)
 
     """For ACKs and junk"""
     def subscribe(self, handler):
@@ -42,7 +44,7 @@ class Dispatch:
     """ return boolean based on whether or not we've seen $alert
     before"""
     def seen(self, alert):
-        key = alert['host'] + 'A' + alert['triggerid']
+        key = alert['host'] + self.alert_sep + alert['triggerid']
         # Have we stored this trigger?
         if not self.r.exists(key):
             logging.debug('never seen this alert for this host before')
@@ -90,7 +92,7 @@ class Dispatch:
         # 0. we want r.hexists calls to be fast.
         # 0. pickle, while neat, is kind of gross.
         # 0. So much json (de/en)coding
-        self.r.hmset(alert['host'] + 'A' + alert['triggerid'], alert)
+        self.r.hmset(alert['host'] + self.alert_sep + alert['triggerid'], alert)
 
     def screen(self, trigs):
         for trig in trigs:
